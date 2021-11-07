@@ -15,7 +15,8 @@ class Server:
                 data, address = s.recvfrom(4096)
                 request = Message(data)
 
-                if request.queries[0].type == b'\x00\x01':
+                if request.queries[0].type == b'\x00\x01' or \
+                        request.queries[0].type == b'\x00\x1c':
                     response = self.get_response(request)
 
                     s.sendto(response.build(), address)
