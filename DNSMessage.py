@@ -108,9 +108,12 @@ class Message:
 
         self.header = Header(data[:12])
         self.queries, byte_index = self.get_queries(12)
-        self.answers, byte_index = self.get_records(byte_index, self.header.ancount)
-        self.authorities, byte_index = self.get_records(byte_index, self.header.nscount)
-        self.additional_records, byte_index = self.get_records(byte_index, self.header.arcount)
+        self.answers, byte_index = self.get_records(byte_index,
+                                                    self.header.ancount)
+        self.authorities, byte_index = self.get_records(byte_index,
+                                                        self.header.nscount)
+        self.additional_records, byte_index = \
+            self.get_records(byte_index, self.header.arcount)
 
     def get_queries(self, byte_index):
         queries = []

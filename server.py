@@ -18,12 +18,6 @@ class Server:
                 if request.queries[0].type == b'\x00\x01':
                     response = self.get_response(request)
 
-                    if response:
-                        response.additional_records = []
-                        response.authorities = []
-                    else:
-                        request.header.flags.qr = '1'
-                        response = request
                     s.sendto(response.build(), address)
 
         except KeyboardInterrupt:
@@ -40,7 +34,8 @@ class Server:
         while data:
             response = Message(data)
             for answer in response.answers:
-                if answer.type == query_type and answer.real_name == query_name:
+                if answer.type == query_type and \
+                        answer.real_name == query_name:
                     return response
             if len(response.authorities) == 0:
                 break
