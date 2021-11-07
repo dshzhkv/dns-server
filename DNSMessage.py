@@ -59,7 +59,6 @@ class Query:
 
     def get_query(self):
         i = get_name_length(self.data)
-
         name = self.data[:i]
         Type = self.data[i:i + 2]
         Class = self.data[i + 2:i + 4]
@@ -70,87 +69,26 @@ class Query:
         return self.name + self.type + self.Class
 
 
-class Answer:
+class Record:
     def __init__(self, data):
         self.data = data
 
         self.length = 0
 
         self.name, self.type, self.Class, self.time, self.data_length, \
-        self.address = self.get_answer()
+            self.address = self.get_record()
 
         self.real_name = self.name
-
-    def get_answer(self):
-        i = get_name_length(self.data)
-
-        name = self.data[:i]
-        Type = self.data[i:i + 2]
-        Class = self.data[i + 2:i + 4]
-        time = self.data[i + 4:i + 8]
-        data_length = self.data[i + 8:i + 10]
-        address = b''
-        for j in range(int.from_bytes(data_length, 'big')):
-            address += self.data[i + 10 + j].to_bytes(1, 'big')
-
-        self.length = i + 10 + int.from_bytes(data_length, 'big')
-
-        return name, Type, Class, time, data_length, address
-
-    def build(self):
-        return self.name + self.type + self.Class + self.time + \
-               self.data_length + self.address
-
-
-class AuthoritativeNameserver:
-    def __init__(self, data):
-        self.data = data
-
-        self.length = 0
-
-        self.name, self.type, self.Class, self.time, self.data_length, \
-        self.name_server = self.get_authority()
-
-        self.real_name = self.name
-        self.real_name_server = self.name_server
-
-    def get_authority(self):
-        i = get_name_length(self.data)
-        name = self.data[:i]
-        Type = self.data[i:i + 2]
-        Class = self.data[i + 2:i + 4]
-        time = self.data[i + 4:i + 8]
-        data_length = self.data[i + 8:i + 10]
-        name_server = b''
-        for j in range(int.from_bytes(data_length, 'big')):
-            name_server += self.data[i + 10 + j].to_bytes(1, 'big')
-
-        self.length = i + 10 + int.from_bytes(data_length, 'big')
-
-        return name, Type, Class, time, data_length, name_server
-
-    def build(self):
-        return self.name + self.type + self.Class + self.time + \
-               self.data_length + self.name_server
-
-
-class AdditionalRecords:
-    def __init__(self, data):
-        self.data = data
-
-        self.length = 0
-
-        self.name, self.type, self.Class, self.time, self.data_length, \
-        self.address = self.get_record()
+        self.real_address = self.address
 
     def get_record(self):
         i = get_name_length(self.data)
+
         name = self.data[:i]
         Type = self.data[i:i + 2]
         Class = self.data[i + 2:i + 4]
         time = self.data[i + 4:i + 8]
         data_length = self.data[i + 8:i + 10]
-
         address = b''
         for j in range(int.from_bytes(data_length, 'big')):
             address += self.data[i + 10 + j].to_bytes(1, 'big')
@@ -170,10 +108,9 @@ class Message:
 
         self.header = Header(data[:12])
         self.queries, byte_index = self.get_queries(12)
-        self.answers, byte_index = self.get_answers(byte_index)
-        self.authorities, byte_index = self.get_authoritative_nameservers(
-            byte_index)
-        self.additional_records = self.get_additional_records(byte_index)
+        self.answers, byte_index = self.get_records(byte_index, self.header.ancount)
+        self.authorities, byte_index = self.get_records(byte_index, self.header.nscount)
+        self.additional_records, byte_index = self.get_records(byte_index, self.header.arcount)
 
     def get_queries(self, byte_index):
         queries = []
@@ -183,44 +120,27 @@ class Message:
             byte_index += query.length
         return queries, byte_index
 
-    def get_answers(self, byte_index):
-        answers = []
-        for i in range(int.from_bytes(self.header.ancount, 'big')):
-            answer = Answer(self.data[byte_index:])
-            answers.append(answer)
-            byte_index += answer.length
-
-            if answer.name == b'\xc0\x0c':
-                answer.real_name = self.queries[0].name
-
-        return answers, byte_index
-
-    def get_authoritative_nameservers(self, byte_index):
-        authorities = []
-        for i in range(int.from_bytes(self.header.nscount, 'big')):
-            authority = AuthoritativeNameserver(self.data[byte_index:])
-            authorities.append(authority)
-            byte_index += authority.length
-
-            if authority.name == b'\xc0\x0c':
-                authority.real_name = self.queries[0].name
-            if authority.name_server[-2:-1] == b'\xc0':
-                offset = int.from_bytes(authority.name_server[-1:], 'big')
-                name_length = get_name_length(self.data[offset:])
-                # print(f"name_server: {authority.name_server}")
-                # print(f"query_name: {self.queries[0].name}")
-                authority.real_name_server = authority.name_server[:-2] + self.data[offset:offset + name_length]
-                # print(f"real_server: {authority.real_name_server}")
-
-        return authorities, byte_index
-
-    def get_additional_records(self, byte_index):
-        additional_records = []
-        for i in range(int.from_bytes(self.header.arcount, 'big')):
-            record = AdditionalRecords(self.data[byte_index:])
-            additional_records.append(record)
+    def get_records(self, byte_index, count):
+        records = []
+        for i in range(int.from_bytes(count, 'big')):
+            record = Record(self.data[byte_index:])
+            records.append(record)
             byte_index += record.length
-        return additional_records
+
+            if record.name[-2:-1] == b'\xc0':
+                record.real_name = self.get_real_name(record.name)
+
+            if record.address[-2:-1] == b'\xc0':
+                record.real_address = self.get_real_name(record.address)
+
+        return records, byte_index
+
+    def get_real_name(self, name):
+        offset = int.from_bytes(name[-1:], 'big')
+        name_length = get_name_length(self.data[offset:])
+        real_name = name[:-2] + self.data[
+                                              offset:offset + name_length]
+        return real_name
 
     def build(self):
         message = self.header.build()
